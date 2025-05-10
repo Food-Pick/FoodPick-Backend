@@ -1,0 +1,41 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: foodpick-postgres
+    ports:
+      - "5000:5432"
+    environment:
+      POSTGRES_USER: foodpick
+      POSTGRES_PASSWORD: foodpick123
+      POSTGRES_DB: foodpick
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - foodpick-network
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: foodpick-api
+    ports:
+      - "2100:3000"
+    volumes:
+      - .:/usr/src/app
+    depends_on:
+      - postgres
+    environment:
+      - DATABASE_URL=postgresql://foodpick:foodpick123@postgres:5432/foodpick
+      - CHOKIDAR_USEPOLLING=true
+      - NODE_ENV=development
+    networks:
+      - foodpick-network
+
+volumes:
+  postgres_data:
+
+networks:
+  foodpick-network:
+    external: true
