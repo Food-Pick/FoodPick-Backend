@@ -4,7 +4,6 @@ set -e
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
     -- 확장 설치
     CREATE EXTENSION IF NOT EXISTS postgis;
-    CREATE EXTENSION IF NOT EXISTS system_stats;
     CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 
     -- 테이블 예시 (이미 있다면 생략)
