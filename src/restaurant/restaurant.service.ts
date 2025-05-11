@@ -14,6 +14,12 @@ export class RestaurantService {
     return this.restaurantRepository.find({ take: 10 });
   }
 
+  async searchRestaurants(id: number): Promise<RestaurantMerged[]> {
+    return this.restaurantRepository.find({
+      where: { id: id },
+    });
+  }
+
   async findNearby(lat: number, lng: number, distance = 3000) {
     const degreeRadius = distance / 111000;
 
