@@ -11,5 +11,9 @@ if [ ! -f ./src/main.ts ] && [ ! -f ./package.json ]; then
   npx @nestjs/cli new . --package-manager npm
 fi
 
+# 의존성 설치
 npm install
-npm run start:dev
+
+# 최적화된 개발 서버 시작
+export NODE_OPTIONS="--max-old-space-size=2048 --max_semi_space_size=64"
+exec npm run start:dev -- --preserveWatchOutput
