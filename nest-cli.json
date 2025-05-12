@@ -4,5 +4,15 @@
   "sourceRoot": "src",
   "compilerOptions": {
     "deleteOutDir": true
+  },
+  "watchOptions": {
+    "watchExclude": [
+      "node_modules",
+      "dist",
+      "**/*.spec.ts",
+      ".git"
+    ],
+    "watchAssets": true,
+    "watchFileIgnorePattern": ".*\\.git/.*|.*\\.js$|.*\\.map$|pgdata/.*"
   }
 }
