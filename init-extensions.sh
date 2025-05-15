@@ -4,6 +4,7 @@ set -e
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
     -- 확장 설치
     CREATE EXTENSION IF NOT EXISTS postgis;
+    CREATE EXTENSION IF NOT EXISTS system_stats;
     CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 
     -- 테이블 예시 (이미 있다면 생략)
@@ -19,4 +20,4 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
 
     -- 인덱스 생성
     CREATE INDEX IF NOT EXISTS idx_geom ON restaurant_merged USING GIST (geom);
-EOSQL 
+EOSQL 0
