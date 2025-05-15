@@ -61,6 +61,9 @@ export class RestaurantMerged {
   menu: string;
 
   @Column({ nullable: true })
+  photo: string;
+
+  @Column({ nullable: true })
   latitude: string;
 
   @Column({ nullable: true })
