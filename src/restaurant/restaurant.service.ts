@@ -14,11 +14,21 @@ export class RestaurantService {
     return this.restaurantRepository.find({ take: 10 });
   }
 
-  async searchfoods(name: string, lat: number, lng: number): Promise<RestaurantMerged[]> {
+  async searchfoods(
+    name: string,
+    lat: number,
+    lng: number,
+  ): Promise<RestaurantMerged[]> {
     const distance = 10000; // 10km
     const degreeRadius = distance / 111000;
 
-    console.log('Search parameters:', { name, lat, lng, distance, degreeRadius });
+    console.log('Search parameters:', {
+      name,
+      lat,
+      lng,
+      distance,
+      degreeRadius,
+    });
 
     const result = await this.restaurantRepository
       .createQueryBuilder('restaurant')
@@ -29,36 +39,41 @@ export class RestaurantService {
         'restaurant.menu',
         'restaurant.latitude',
         'restaurant.longitude',
-        'restaurant.geom'
+        'restaurant.geom',
       ])
       .addSelect(
         `
-        ST_Distance(
-          restaurant.geom::geography,
-          ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography
-        )`,
+    ST_Distance(
+      restaurant.geom::geography,
+      ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography
+    )
+    `,
         'dist',
       )
-      .where('LOWER(restaurant.menu) LIKE LOWER(:name)', { name: `%${name}%` })
-      .andWhere(
+      // 공간 필터를 먼저 `.where()`에 적용
+      .where(
         `
-        restaurant.geom && ST_Expand(ST_SetSRID(ST_MakePoint(:lng, :lat), 4326), :degreeRadius)
-        AND ST_DWithin(
-          restaurant.geom::geography,
-          ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
-          :distance
-        )
-        `,
+    restaurant.geom && ST_Expand(ST_SetSRID(ST_MakePoint(:lng, :lat), 4326), :degreeRadius)
+    AND ST_DWithin(
+      restaurant.geom::geography,
+      ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
+      :distance
+    )
+    `,
         { lat, lng, distance, degreeRadius },
       )
+      // 문자열 필터: pgroonga 인덱스를 활용
+      .andWhere('restaurant.menu &@~ :keyword', {
+        keyword: name,
+      })
       .orderBy('dist', 'ASC')
-      .limit(10)
+      .limit(25)
       .cache(true)
       .getMany();
 
     console.log('Query result:', {
       resultCount: result.length,
-      firstResult: result[0],
+      // firstResult: result[0],
     });
 
     return result;
@@ -66,12 +81,11 @@ export class RestaurantService {
 
   async searchRestaurants(id: number): Promise<RestaurantMerged[]> {
     if (id !== undefined) {
-    return this.restaurantRepository.find({
-      where: { id: id },
-    });
-    }
-    else {
-      throw new Error('id is undefined'); 
+      return this.restaurantRepository.find({
+        where: { id: id },
+      });
+    } else {
+      throw new Error('id is undefined');
     }
   }
 
