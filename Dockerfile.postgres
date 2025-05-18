@@ -1,12 +1,18 @@
 FROM postgres:15
 
 # 시스템 패키지 설치
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && \
+    apt-get install -y \
+    wget gnupg lsb-release \
     postgresql-15-postgis-3 \
     postgresql-15-postgis-3-scripts \
     postgresql-15-pgrouting \
     postgresql-15-pgrouting-scripts \
     postgresql-contrib-15 \
+    && echo "deb https://packages.groonga.org/debian/ $(lsb_release -cs) main" > /etc/apt/sources.list.d/groonga.list \
+    && wget -qO - https://packages.groonga.org/debian/groonga-archive-keyring.gpg | apt-key add - \
+    && apt-get update && \
+    apt-get install -y postgresql-15-pgroonga \
     && rm -rf /var/lib/apt/lists/*
 
 # 초기화 스크립트 생성
