@@ -4,6 +4,8 @@ import { AppService } from './app.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { RestaurantMerged } from './entity/restaurant-merged.entity';
 import { RestaurantModule } from './restaurant/restaurant.module';
+import { AuthModule } from './auth/auth.module';
+import { Auth } from './entity/auth.entity';
 
 @Module({
   imports: [
@@ -14,11 +16,12 @@ import { RestaurantModule } from './restaurant/restaurant.module';
       username: 'foodpick',
       password: 'foodpick123',
       database: 'foodpick',
-      entities: [RestaurantMerged],
-      synchronize: false, // 실제 운영 DB라면 false 권장
+      entities: [RestaurantMerged, Auth],
+      synchronize: true, // 개발 환경에서는 true로 설정 typeorm이 db에 동기화되어 테이블 만들어버림.
     }),
     TypeOrmModule.forFeature([RestaurantMerged]),
     RestaurantModule,
+    AuthModule,
   ],
   controllers: [AppController],
   providers: [AppService],
