@@ -17,7 +17,9 @@ import { Auth } from './entity/auth.entity';
       password: 'foodpick123',
       database: 'foodpick',
       entities: [RestaurantMerged, Auth],
-      synchronize: true, // 개발 환경에서는 true로 설정 typeorm이 db에 동기화되어 테이블 만들어버림.
+      synchronize: false, // 마이그레이션을 사용하기 위해 false로 설정 이거 DB날려버릴수 있어요.
+      migrations: ['dist/migrations/*.js'],
+      migrationsRun: true,
     }),
     TypeOrmModule.forFeature([RestaurantMerged]),
     RestaurantModule,
