@@ -1,4 +1,4 @@
-import { IsString, MinLength, IsNotEmpty, IsNumber } from 'class-validator'
+import { IsString, MinLength, IsNotEmpty, IsNumber, IsArray } from 'class-validator'
 
 export class RegisterDto {
   @IsString({ message: '아이디는 문자열이어야 합니다.' })
@@ -20,10 +20,11 @@ export class RegisterDto {
   gender: number;
 
   @IsNumber()
-  @IsNotEmpty({ message: '나이를 입력해주세요.' })
+  @IsNotEmpty({ message: '연령대 코드를 입력해주세요.' })
   age: number;
 
-  @IsString({ message: '선호 음식을 입력해주세요.' })
+  @IsArray({ message: '선호 음식은 배열이어야 합니다.' })
+  @IsString({ each: true, message: '선호 음식은 문자열이어야 합니다.' })
   @IsNotEmpty({ message: '선호 음식을 입력해주세요.' })
-  favorite_food: string;
+  favorite_food: string[];
 } 

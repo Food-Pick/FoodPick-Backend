@@ -5,6 +5,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Auth } from '../entity/auth.entity';
 import * as bcrypt from 'bcrypt';
+import { IdCheckDto } from './dto/id-check.dto';
 
 @Injectable()
 export class AuthService {
@@ -30,6 +31,18 @@ export class AuthService {
     return { message: '로그인 성공' };
   }
 
+  async registerCheckId(idCheckDto: IdCheckDto) {
+    const existingUser = await this.authRepository.findOne({
+      where: { userId: idCheckDto.id }
+    });
+
+    if (existingUser) {
+      throw new ConflictException('이미 존재하는 아이디입니다.');
+    }
+
+    return { message: '아이디 중복 확인 성공' };
+  }
+
   async register(registerDto: RegisterDto) {
     const existingUser = await this.authRepository.findOne({
       where: { userId: registerDto.id }
@@ -45,6 +58,10 @@ export class AuthService {
     const user = this.authRepository.create({
       userId: registerDto.id,
       password: hashedPassword,
+      nickname: registerDto.nickname,
+      gender: registerDto.gender,
+      age: registerDto.age,
+      favorite_food: registerDto.favorite_food,
     });
 
     await this.authRepository.save(user);

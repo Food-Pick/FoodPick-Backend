@@ -17,11 +17,11 @@ import { Auth } from './entity/auth.entity';
       password: 'foodpick123',
       database: 'foodpick',
       entities: [RestaurantMerged, Auth],
-      synchronize: false, // 마이그레이션을 사용하기 위해 false로 설정 이거 DB날려버릴수 있어요.
+      synchronize: false, // 마이그레이션을 사용하기 위해 false로 설정 이거 true 시 DB날려버릴수 있어요.
       migrations: ['dist/migrations/*.js'],
       migrationsRun: true,
     }),
-    TypeOrmModule.forFeature([RestaurantMerged]),
+    TypeOrmModule.forFeature([RestaurantMerged, Auth]),
     RestaurantModule,
     AuthModule,
   ],

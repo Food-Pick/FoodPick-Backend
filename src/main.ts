@@ -8,6 +8,11 @@ async function bootstrap() {
     whitelist: true,
     forbidNonWhitelisted: true,
     transform: true,
+    enableDebugMessages: true,
+    validationError: {
+      target: true,
+      value: true,
+    },
   }));
   await app.listen(process.env.PORT ?? 3000);
 }
