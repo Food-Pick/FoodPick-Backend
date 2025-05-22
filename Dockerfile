@@ -5,6 +5,11 @@ WORKDIR /usr/src/app
 # bcrypt 빌드 의존성 설치
 RUN apk add --no-cache python3 make g++
 
+COPY package*.json ./
+
+# 의존성 설치
+RUN npm install
+
 COPY . .
 
 # entrypoint.sh 복사 및 실행 권한 부여
