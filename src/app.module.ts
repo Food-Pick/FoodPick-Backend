@@ -6,6 +6,7 @@ import { RestaurantMerged } from './entity/restaurant-merged.entity';
 import { RestaurantModule } from './restaurant/restaurant.module';
 import { AuthModule } from './auth/auth.module';
 import { Auth } from './entity/auth.entity';
+import { RecommendModule } from './recommend/recommend.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { Auth } from './entity/auth.entity';
     TypeOrmModule.forFeature([RestaurantMerged, Auth]),
     RestaurantModule,
     AuthModule,
+    RecommendModule,
   ],
   controllers: [AppController],
   providers: [AppService],
