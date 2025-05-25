@@ -76,4 +76,7 @@ export class RestaurantMerged {
     nullable: true,
   })
   geom: object;
+
+  @Column({ nullable: true })
+  menu_tags: string;
 }
