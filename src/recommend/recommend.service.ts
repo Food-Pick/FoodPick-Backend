@@ -41,15 +41,12 @@ export class RecommendService {
   async getRecommendations(lat: number, lon: number, currentMealTime?: string) {
     // 날씨 정보를 먼저 가져옵니다. 날씨 의존 규칙에 필요합니다.
     const weather = await this.weatherService.getCurrentWeather(lat, lon);
-    const currentTemp = parseFloat(weather.temperature); // 숫자로 변환
-    const currentPrecip = parseFloat(weather.precipitation); // 숫자로 변환
+    const currentTemp = parseFloat(weather.temperature);
+    const currentPrecip = parseFloat(weather.precipitation);
 
     // currentMealTime이 없으면 시간대별로 자동 결정
     const now = this.getKSTDate();
     const hour = now.getHours();
-    console.log(`Current KST Hour: ${hour}`);
-    console.log(`Current KST Time: ${now}`);
-    console.log('Weather:', weather);
     let mealTime = currentMealTime;
     if (!mealTime) {
       if (hour >= 6 && hour < 10) mealTime = '아침';
@@ -59,12 +56,27 @@ export class RecommendService {
       else if (hour >= 17 && hour < 21) mealTime = '저녁';
       else mealTime = '야식';
     }
-    console.log(`Determined Meal Time: ${mealTime}`);
 
-    // 모든 식당 데이터 불러오기 (실제 서비스에서는 페이징/필터 필요)
-    // const allRestaurants = await this.restaurantRepository.find({
-    //   take: 20, // 더 많은 데이터를 테스트하기 위해 take를 10000으로 조정
-    // });
+    // 날씨 조건에 맞는 규칙만 미리 필터링
+    const applicableWeatherRules = weatherDependentRules.filter((rule) => {
+      if (!rule.weather) return true;
+      const { temperature, precipitation } = rule.weather;
+
+      if (temperature?.lt !== undefined && currentTemp >= temperature.lt)
+        return false;
+      if (temperature?.gt !== undefined && currentTemp <= temperature.gt)
+        return false;
+      if (precipitation?.gt !== undefined && currentPrecip <= precipitation.gt)
+        return false;
+
+      return true;
+    });
+
+    // 시간 조건에 맞는 규칙만 미리 필터링
+    const applicableTimeRules = [
+      ...applicableWeatherRules,
+      ...weatherIndependentRules,
+    ].filter((rule) => !rule.meal_time || rule.meal_time.includes(mealTime));
 
     const { entities: allRestaurants } =
       await this.restaurantService.findNearby(lat, lon, 10000);
@@ -75,180 +87,59 @@ export class RecommendService {
 
       let parsedRestaurantData: any;
       try {
-        if (typeof restaurant.menu_tags === 'string') {
-          parsedRestaurantData = JSON.parse(restaurant.menu_tags);
-        } else if (
-          typeof restaurant.menu_tags === 'object' &&
-          restaurant.menu_tags !== null
-        ) {
-          parsedRestaurantData = restaurant.menu_tags;
-        } else {
-          console.error(
-            `Invalid menu_tags type for restaurant ${restaurant.id}: ${typeof restaurant.menu_tags}. Skipping.`,
-          );
-          continue;
-        }
+        parsedRestaurantData =
+          typeof restaurant.menu_tags === 'string'
+            ? JSON.parse(restaurant.menu_tags)
+            : restaurant.menu_tags;
       } catch (e) {
         console.error(
-          `Error parsing or accessing menu_tags for restaurant ${restaurant.id}:`,
+          `Error parsing menu_tags for restaurant ${restaurant.id}:`,
           e,
         );
         continue;
       }
 
       const actualMenuTagsObj = parsedRestaurantData.menu_tags;
-
       if (
         !actualMenuTagsObj ||
         typeof actualMenuTagsObj !== 'object' ||
-        Array.isArray(actualMenuTagsObj) ||
-        Object.keys(actualMenuTagsObj).length === 0
+        Array.isArray(actualMenuTagsObj)
       ) {
-        console.warn(
-          `No valid menu items with tags found under 'menu_tags' key for restaurant ${restaurant.id}. Skipping.`,
-        );
         continue;
       }
 
+      // 음식점 이미지 처리
+      let restaurantPhoto = restaurant['photo'];
+      if (typeof restaurantPhoto === 'string') {
+        try {
+          const arr = JSON.parse(restaurantPhoto);
+          if (Array.isArray(arr)) restaurantPhoto = arr[0];
+        } catch {
+          // 단일 URL 문자열일 경우 그대로 사용
+        }
+      } else if (Array.isArray(restaurantPhoto)) {
+        restaurantPhoto = restaurantPhoto[0];
+      }
+
       for (const [menuName, tags] of Object.entries(actualMenuTagsObj)) {
-        // 음식점 이미지 첫번째 값만 추출 (배열/JSON string/단일 문자열 모두 대응)
-        let restaurantPhoto = restaurant['photo'];
-        if (typeof restaurantPhoto === 'string') {
-          try {
-            const arr = JSON.parse(restaurantPhoto);
-            if (Array.isArray(arr)) restaurantPhoto = arr[0];
-          } catch {
-            // 단일 URL 문자열일 경우 그대로 사용
+        const matchedRules = applicableTimeRules.filter((rule) => {
+          for (const [tag, values] of Object.entries(rule.menu_tags || {})) {
+            if (
+              !tags[tag] ||
+              !Array.isArray(tags[tag]) ||
+              !tags[tag].some((v: string) => (values as string[]).includes(v))
+            ) {
+              return false;
+            }
           }
-        } else if (Array.isArray(restaurantPhoto)) {
-          restaurantPhoto = restaurantPhoto[0];
-        }
+          return true;
+        });
 
-        const matchedRulesForCurrentMenu = [];
-
-        // 1. 날씨 의존 규칙 필터링
-        const matchedWeatherDependentRules = weatherDependentRules.filter(
-          (rule) => {
-            const ruleName = rule.name; // 규칙 이름을 로그에 사용하기 위해 변수로 저장
-
-            // 날씨 조건 확인
-            if (rule.weather) {
-              if (
-                rule.weather.temperature?.lt !== undefined &&
-                currentTemp >= rule.weather.temperature.lt
-              ) {
-                // console.log(
-                //   `[미매칭 - 날씨] 규칙: ${ruleName}, 식당: ${restaurant['사업장명']}, 메뉴: ${menuName} - 온도 낮음 조건 불일치: ${currentTemp} (현재) >= ${rule.weather.temperature.lt} (규칙)`,
-                // );
-                return false;
-              }
-              if (
-                rule.weather.temperature?.gt !== undefined &&
-                currentTemp <= rule.weather.temperature.gt
-              ) {
-                // console.log(
-                //   `[미매칭 - 날씨] 규칙: ${ruleName}, 식당: ${restaurant['사업장명']}, 메뉴: ${menuName} - 온도 높음 조건 불일치: ${currentTemp} (현재) <= ${rule.weather.temperature.gt} (규칙)`,
-                // );
-                return false;
-              }
-              if (
-                rule.weather.precipitation?.gt !== undefined &&
-                currentPrecip <= rule.weather.precipitation.gt
-              ) {
-                // console.log(
-                //   `[미매칭 - 날씨] 규칙: ${ruleName}, 식당: ${restaurant['사업장명']}, 메뉴: ${menuName} - 강수량 조건 불일치: ${currentPrecip} (현재) <= ${rule.weather.precipitation.gt} (규칙)`,
-                // );
-                return false;
-              }
-            }
-
-            // 시간 조건 확인 (날씨 조건 통과 후)
-            if (rule.meal_time && !rule.meal_time.includes(mealTime)) {
-              //   console.log(
-              //     `[미매칭 - 시간] 규칙: ${ruleName}, 식당: ${restaurant['사업장명']}, 메뉴: ${menuName} - 시간 조건 불일치: ${mealTime} (현재) not in ${rule.meal_time} (규칙)`,
-              //   );
-              return false;
-            }
-
-            // menu_tags 조건 확인 (날씨 및 시간 조건 통과 후)
-            for (const [tag, values] of Object.entries(rule.menu_tags || {})) {
-              if (
-                !tags[tag] ||
-                !Array.isArray(tags[tag]) ||
-                !tags[tag].some((v: string) => (values as string[]).includes(v))
-              ) {
-                // console.log(
-                //   `[미매칭 - 태그] 규칙: ${ruleName}, 식당: ${restaurant['사업장명']}, 메뉴: ${menuName} - 태그 불일치: ${tag}, 규칙값: ${values}, 실제값: ${tags[tag] || '없음'} (날씨/시간 조건 패스)`,
-                // );
-                return false;
-              }
-            }
-            // 모든 조건 통과 (날씨, 시간, 태그)
-            console.log(
-              `[매칭 성공] 규칙: ${ruleName}, 식당: ${restaurant['사업장명']}, 메뉴: ${menuName}`,
-            );
-            return true;
-          },
-        );
-        matchedRulesForCurrentMenu.push(...matchedWeatherDependentRules);
-
-        // 2. 날씨 독립 규칙 필터링 (날씨 조건 확인 없음)
-        // 이 부분은 기존처럼 간단한 미매칭 로그를 유지합니다.
-        const matchedWeatherIndependentRules = weatherIndependentRules.filter(
-          (rule) => {
-            // 시간 조건 확인
-            if (rule.meal_time && !rule.meal_time.includes(mealTime)) {
-              return false;
-            }
-
-            // menu_tags 조건 확인
-            for (const [tag, values] of Object.entries(rule.menu_tags || {})) {
-              if (
-                !tags[tag] ||
-                !Array.isArray(tags[tag]) ||
-                !tags[tag].some((v: string) => (values as string[]).includes(v))
-              ) {
-                // 이 부분은 이전처럼 단순히 false를 반환하고 상세 로그는 생략합니다.
-                // 필요하다면 이곳에도 상세 로그를 추가할 수 있습니다.
-                return false;
-              }
-            }
-            return true;
-          },
-        );
-        matchedRulesForCurrentMenu.push(...matchedWeatherIndependentRules);
-
-        // 디버깅: 각 메뉴별로 어떤 규칙이 매칭됐는지 출력 (최종 매칭된 규칙만)
-        if (matchedRulesForCurrentMenu.length > 0) {
-          console.log(
-            `\n--- [최종 추천 후보 발견] 식당: ${restaurant['사업장명']}, 메뉴: ${menuName} ---`,
-          );
-          matchedRulesForCurrentMenu.forEach((rule) => {
-            console.log(
-              `  - 매칭된 규칙: ${rule.name} / 설명: ${rule.description}`,
-            );
-            console.log(
-              `    * 날씨 조건: ${JSON.stringify(rule.weather || '없음')}`,
-            );
-            console.log(
-              `    * 시간 조건: ${rule.meal_time?.join(', ') || '없음'}`,
-            );
-            console.log(
-              `    * 태그 조건: ${JSON.stringify(rule.menu_tags || '없음')}`,
-            );
-          });
-        }
-
-        // 매칭된 규칙이 있다면 추천 목록에 추가
-        if (matchedRulesForCurrentMenu.length > 0) {
-          // 중복 규칙 제거 (동일 메뉴가 여러 규칙에 매칭될 경우)
+        if (matchedRules.length > 0) {
           const uniqueMatchedRules = Array.from(
-            new Set(matchedRulesForCurrentMenu.map((r) => r.name)),
-          ).map((name) =>
-            matchedRulesForCurrentMenu.find((r) => r.name === name),
-          );
+            new Set(matchedRules.map((r) => r.name)),
+          ).map((name) => matchedRules.find((r) => r.name === name));
 
-          // 여기서 restaurant.menu에서 menuName에 해당하는 이미지 URL을 찾습니다.
           let specificMenuImageUrl: string | null = null;
           try {
             const menuDetails = JSON.parse(restaurant.menu);
@@ -256,21 +147,14 @@ export class RecommendService {
               const matchedMenuItem = menuDetails.find(
                 (item) => item.name === menuName,
               );
-              if (
-                matchedMenuItem &&
-                matchedMenuItem.images &&
-                Array.isArray(matchedMenuItem.images) &&
-                matchedMenuItem.images.length > 0
-              ) {
+              if (matchedMenuItem?.images?.[0]) {
                 specificMenuImageUrl = matchedMenuItem.images[0];
               }
             }
           } catch (e) {
             console.warn(
-              `Could not parse menu details for restaurant ${restaurant.id} to find image for ${menuName}. Error:`,
-              e,
+              `Could not parse menu details for restaurant ${restaurant.id}`,
             );
-            // 파싱 실패 시 기본값은 null
           }
 
           recommendations.push({
@@ -278,7 +162,7 @@ export class RecommendService {
             restaurant_name: restaurant['사업장명'],
             restaurant_image_url: restaurantPhoto || null,
             menu: menuName,
-            menu_image_url: specificMenuImageUrl, // <--- 이 부분이 변경되었습니다.
+            menu_image_url: specificMenuImageUrl,
             matched_rules: uniqueMatchedRules.map((r) => r.name),
             descriptions: uniqueMatchedRules.map((r) => r.description),
             matched_tags: uniqueMatchedRules.map((rule) => {
@@ -302,12 +186,42 @@ export class RecommendService {
       }
     }
 
-    console.log(
-      `Total recommendations found before shuffle: ${recommendations.length}`,
-    );
+    // 같은 음식점의 메뉴들을 그룹화
+    const groupedRecommendations = recommendations.reduce((acc, curr) => {
+      const existingRestaurant = acc.find(
+        (item) => item.restaurant_id === curr.restaurant_id,
+      );
 
-    // 랜덤 5개 추출 (추천 메뉴가 많을 경우에 대비)
-    const shuffled = recommendations.sort(() => 0.5 - Math.random());
+      if (existingRestaurant) {
+        existingRestaurant.menus.push({
+          name: curr.menu,
+          image_url: curr.menu_image_url,
+          matched_rules: curr.matched_rules,
+          descriptions: curr.descriptions,
+          matched_tags: curr.matched_tags,
+          applied_rules_details: curr.applied_rules_details,
+        });
+      } else {
+        acc.push({
+          restaurant_id: curr.restaurant_id,
+          restaurant_name: curr.restaurant_name,
+          restaurant_image_url: curr.restaurant_image_url,
+          menus: [
+            {
+              name: curr.menu,
+              image_url: curr.menu_image_url,
+              matched_rules: curr.matched_rules,
+              descriptions: curr.descriptions,
+              matched_tags: curr.matched_tags,
+              applied_rules_details: curr.applied_rules_details,
+            },
+          ],
+        });
+      }
+      return acc;
+    }, []);
+
+    const shuffled = groupedRecommendations.sort(() => 0.5 - Math.random());
     const selected = shuffled.slice(0, 25);
 
     return {
