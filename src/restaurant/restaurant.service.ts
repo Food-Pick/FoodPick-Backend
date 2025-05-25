@@ -94,6 +94,15 @@ export class RestaurantService {
 
     return this.restaurantRepository
       .createQueryBuilder('restaurant')
+      .select([
+        'restaurant.id',
+        'restaurant.사업장명',
+        'restaurant.menu',
+        'restaurant.menu_tags',
+        'restaurant.photo',
+        'restaurant.latitude',
+        'restaurant.longitude'
+      ])
       .addSelect(
         `
       ST_Distance(
@@ -115,6 +124,7 @@ export class RestaurantService {
       )
       .orderBy('dist', 'ASC')
       .limit(50)
+      .cache(true)
       .getRawAndEntities();
   }
 }
