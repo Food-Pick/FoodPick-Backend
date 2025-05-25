@@ -88,15 +88,29 @@ export class WeatherService {
   // UTC 기준 시간을 KST(UTC+9)로 변환하는 함수
   private getKSTDate(): Date {
     const now = new Date();
-    // UTC+9로 변환
-    return new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    const kstDate = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+
+    // 오전 1시 이전이면 이전 날짜로 처리
+    if (kstDate.getHours() < 1) {
+      kstDate.setDate(kstDate.getDate() - 1);
+      kstDate.setHours(kstDate.getHours() + 24); // 시간을 24시간 더해서 이전 날짜의 같은 시간으로 설정
+    }
+
+    return kstDate;
   }
 
   private getBaseDate(): string {
-    const date = this.getKSTDate();
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
+    const now = new Date();
+    const kstDate = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+
+    // 오전 1시 이전이면 이전 날짜로 처리
+    if (kstDate.getHours() < 1) {
+      kstDate.setDate(kstDate.getDate() - 1);
+    }
+
+    const year = kstDate.getFullYear();
+    const month = String(kstDate.getMonth() + 1).padStart(2, '0');
+    const day = String(kstDate.getDate()).padStart(2, '0');
     return `${year}${month}${day}`;
   }
 

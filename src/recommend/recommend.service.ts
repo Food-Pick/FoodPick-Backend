@@ -35,7 +35,15 @@ export class RecommendService {
   // UTC 기준 시간을 KST(UTC+9)로 변환하는 함수
   private getKSTDate(): Date {
     const now = new Date();
-    return new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    const kstDate = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    
+    // 오전 1시 이전이면 이전 날짜로 처리
+    if (kstDate.getHours() < 1) {
+      kstDate.setDate(kstDate.getDate() - 1);
+      kstDate.setHours(kstDate.getHours() + 24); // 시간을 24시간 더해서 이전 날짜의 같은 시간으로 설정
+    }
+    
+    return kstDate;
   }
 
   async getRecommendations(lat: number, lon: number, currentMealTime?: string) {
