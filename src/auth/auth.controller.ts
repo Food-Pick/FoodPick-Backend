@@ -8,15 +8,22 @@ import { IdCheckDto } from './dto/id-check.dto';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  // @Post('login')
+  // async login(@Body() body: any) {
+  //   console.log('login 호출');
+  //   console.log(body);
+  // }
+
   @Post('login')
   async login(@Body() loginDto: LoginDto) {
+    console.log('login 호출');
     console.log(loginDto);
     return this.authService.login(loginDto);
   }
 
   @Post('register-check-id')
   async registerCheckId(@Body() idCheckDto: IdCheckDto) {
-    console.log('register-check-id 호출');
+    console.log('register-check-id&email 호출');
     console.log(idCheckDto);
     return this.authService.registerCheckId(idCheckDto);
   }
@@ -27,4 +34,4 @@ export class AuthController {
     console.log(registerDto);
     return this.authService.register(registerDto);
   }
-} 
+}
