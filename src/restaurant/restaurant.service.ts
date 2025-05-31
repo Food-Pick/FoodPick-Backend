@@ -3,6 +3,32 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RestaurantMerged } from '../entity/restaurant-merged.entity';
 
+// 카테고리 매핑 상수 정의
+const CATEGORY_MAPPING = {
+  korean: [
+    '한식',
+    '분식',
+    '냉면집',
+    '식육(숯불구이)',
+    '탕류(보신용)',
+    '김밥(도시락)',
+  ],
+  chinese: ['중국식'],
+  japanese: ['일식', '횟집', '복어취급'],
+  western: [
+    '경양식',
+    '패밀리레스트랑',
+    '패스트푸드',
+    '외국음식전문점(인도,태국등)',
+    '뷔페식',
+  ],
+  cafe: ['까페', '전통찻집', '라이브카페', '키즈카페'],
+  pub: ['호프/통닭', '감성주점', '통닭(치킨)', '정종/대포집/소주방'],
+  etc: ['기타', '이동조리', '출장조리', '기타 휴게음식점', null],
+} as const;
+
+type CategoryType = keyof typeof CATEGORY_MAPPING;
+
 @Injectable()
 export class RestaurantService {
   constructor(
@@ -101,7 +127,7 @@ export class RestaurantService {
         'restaurant.menu_tags',
         'restaurant.photo',
         'restaurant.latitude',
-        'restaurant.longitude'
+        'restaurant.longitude',
       ])
       .addSelect(
         `
@@ -126,5 +152,101 @@ export class RestaurantService {
       .limit(50)
       .cache(true)
       .getRawAndEntities();
+  }
+
+  async getRandomPick(lat: number, lng: number, distance = 3000) {
+    const degreeRadius = distance / 111000;
+    const randomRestaurant = this.restaurantRepository
+      .createQueryBuilder('restaurant')
+      .select([
+        'restaurant.id',
+        'restaurant.사업장명',
+        'restaurant.menu',
+        'restaurant.menu_tags',
+        'restaurant.photo',
+        'restaurant.latitude',
+        'restaurant.longitude',
+      ])
+      .addSelect(
+        `
+      ST_Distance(
+        restaurant.geom::geography,
+        ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography
+      )`,
+        'dist',
+      )
+      .where(
+        `
+      restaurant.geom && ST_Expand(ST_SetSRID(ST_MakePoint(:lng, :lat), 4326), :degreeRadius)
+      AND ST_DWithin(
+        restaurant.geom::geography,
+        ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
+        :distance
+      )
+    `,
+        { lat, lng, distance, degreeRadius },
+      )
+      .orderBy('dist', 'ASC')
+      .limit(500)
+      .cache(true)
+      .getRawAndEntities();
+
+    const { entities } = await randomRestaurant;
+    console.log('총 레스토랑 수', entities.length);
+    return randomRestaurant;
+  }
+
+  async searchByCategory(
+    category: CategoryType,
+    lat: number,
+    lng: number,
+    distance = 3000,
+  ) {
+    const degreeRadius = distance / 111000;
+    const businessTypes = CATEGORY_MAPPING[category];
+
+    console.log('category', category);
+    const result = await this.restaurantRepository
+      .createQueryBuilder('restaurant')
+      .select([
+        'restaurant.id',
+        'restaurant.사업장명',
+        'restaurant.menu',
+        'restaurant.menu_tags',
+        'restaurant.photo',
+        'restaurant.latitude',
+        'restaurant.longitude',
+        'restaurant.업태구분명',
+      ])
+      .addSelect(
+        `
+      ST_Distance(
+        restaurant.geom::geography,
+        ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography
+      )`,
+        'dist',
+      )
+      .where(
+        `
+      restaurant.geom && ST_Expand(ST_SetSRID(ST_MakePoint(:lng, :lat), 4326), :degreeRadius)
+      AND ST_DWithin(
+        restaurant.geom::geography,
+        ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
+        :distance
+      )
+      AND (
+        restaurant.업태구분명 IN (:...businessTypes)
+        OR (restaurant.업태구분명 IS NULL AND :category = 'etc')
+      )
+    `,
+        { lat, lng, distance, degreeRadius, businessTypes, category },
+      )
+      .orderBy('dist', 'ASC')
+      .limit(50)
+      .cache(true)
+      .getRawAndEntities();
+
+    console.log('result', result);
+    return result;
   }
 }

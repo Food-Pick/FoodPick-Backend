@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+/* eslint-disable prettier/prettier */
+import { Controller, Get, Query } from '@nestjs/common';
 import { RestaurantService } from './restaurant.service';
 import { RestaurantMerged } from 'src/entity/restaurant-merged.entity';
 
@@ -17,11 +18,15 @@ export class RestaurantController {
   }
 
   @Get('search_food')
-  searchfoods(@Query('food') food: string, @Query('lat') lat: number, @Query('lng') lng: number) {
+  searchfoods(
+    @Query('food') food: string,
+    @Query('lat') lat: number,
+    @Query('lng') lng: number,
+  ) {
     console.log('searchfoods 호출');
     console.log(food, lat, lng);
     return this.restaurantService.searchfoods(food, lat, lng);
-  } 
+  }
 
   @Get('search')
   searchRestaurants(@Query('id') id: number) {
@@ -30,10 +35,32 @@ export class RestaurantController {
     return this.restaurantService.searchRestaurants(id);
   }
 
+  @Get('search/category')
+  searchByCategory(
+    @Query('category') category: string,
+    @Query('lat') lat: number,
+    @Query('lng') lng: number,
+    @Query('distance') distance?: number,
+  ) {
+    console.log('searchByCategory 호출');
+    console.log(category);
+    return this.restaurantService.searchByCategory(
+      category as any,
+      Number(lat),
+      Number(lng),
+      distance ? Number(distance) : undefined,
+    );
+  }
+
   @Get('nearby')
   getNearbyRestaurants(@Query('lat') lat: number, @Query('lng') lng: number) {
     console.log(lat, lng);
     console.log('nearby 호출');
     return this.restaurantService.findNearby(lat, lng);
+  }
+
+  @Get('randompick')
+  getRandomPick(@Query('lat') lat: number, @Query('lng') lng: number) {
+    return this.restaurantService.getRandomPick(lat, lng);
   }
 }
