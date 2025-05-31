@@ -205,6 +205,23 @@ export class RestaurantService {
     const degreeRadius = distance / 111000;
     const businessTypes = CATEGORY_MAPPING[category];
 
+    // 키워드 기반 보정 조건 정의 (카테고리별로 필요한 키워드 지정 가능)
+    const categoryKeywordMap: Record<CategoryType, string[]> = {
+      korean: ['한식', '떡볶이', '비빔밥'],
+      chinese: ['중국집', '짜장', '짬뽕'],
+      japanese: ['일식', '초밥', '사시미', '스시'],
+      western: ['파스타', '스테이크', '피자', '레스토랑'],
+      cafe: ['카페', '커피', '라떼', '디저트'],
+      pub: ['호프', '맥주', '술집', '포차'],
+      etc: [],
+    };
+
+    console.log('category', category);
+    const keywordRegex =
+      categoryKeywordMap[category].length > 0
+        ? categoryKeywordMap[category].join('|')
+        : null;
+
     console.log('category', category);
     const result = await this.restaurantRepository
       .createQueryBuilder('restaurant')
@@ -237,9 +254,18 @@ export class RestaurantService {
       AND (
         restaurant.업태구분명 IN (:...businessTypes)
         OR (restaurant.업태구분명 IS NULL AND :category = 'etc')
+        ${keywordRegex ? 'OR (restaurant.사업장명 ~* :keywordRegex OR restaurant.menu ~* :keywordRegex)' : ''}
       )
     `,
-        { lat, lng, distance, degreeRadius, businessTypes, category },
+        {
+          lat,
+          lng,
+          distance,
+          degreeRadius,
+          businessTypes,
+          category,
+          ...(keywordRegex ? { keywordRegex } : {}),
+        },
       )
       .orderBy('dist', 'ASC')
       .limit(50)
