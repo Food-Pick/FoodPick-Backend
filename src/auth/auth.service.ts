@@ -52,6 +52,7 @@ export class AuthService {
       email: user.email,
       gender: user.gender,
       age: user.age,
+      price: user.price,
       favorite_food: user.favorite_food,
     };
   }
@@ -103,6 +104,7 @@ export class AuthService {
       email: registerDto.email,
       gender: registerDto.gender,
       age: registerDto.age,
+      price: registerDto.price,
       favorite_food: registerDto.favorite_food,
     });
 
