@@ -22,11 +22,15 @@ export class Auth {
 
   @Column()
   email: string;
+
   @Column()
   gender: number;
 
   @Column()
   age: number;
+
+  @Column()
+  price: string;
 
   @Column('text', { array: true })
   favorite_food: string[];
