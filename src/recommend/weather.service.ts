@@ -6,14 +6,14 @@ export class WeatherService {
 
   // 기상청 공식 격자 좌표 변환 함수
   private convertToGrid(lat: number, lon: number) {
-    const RE = 6371.00877; // 지구 반경(km)
-    const GRID = 5.0; // 격자 간격(km)
-    const SLAT1 = 30.0; // 투영 위도1(degree)
-    const SLAT2 = 60.0; // 투영 위도2(degree)
-    const OLON = 126.0; // 기준점 경도(degree)
-    const OLAT = 38.0; // 기준점 위도(degree)
-    const XO = 43; // 기준점 X좌표(GRID)
-    const YO = 136; // 기준점 Y좌표(GRID)
+    const RE = 6371.00877;
+    const GRID = 5.0;
+    const SLAT1 = 30.0;
+    const SLAT2 = 60.0;
+    const OLON = 126.0;
+    const OLAT = 38.0;
+    const XO = 43;
+    const YO = 136;
     const DEGRAD = Math.PI / 180.0;
 
     const re = RE / GRID;
@@ -44,93 +44,97 @@ export class WeatherService {
     return rs;
   }
 
-  async getCurrentWeather(lat: number, lon: number) {
-    try {
-      const grid = this.convertToGrid(lat, lon);
-
-      const params = new URLSearchParams({
-        serviceKey: process.env.WEATHER_API_KEY,
-        pageNo: '1',
-        numOfRows: '1000',
-        dataType: 'JSON',
-        base_date: this.getBaseDate(),
-        base_time: this.getBaseTime(),
-        nx: grid.x.toString(),
-        ny: grid.y.toString(),
-      });
-
-      const url = `http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst?${params}`;
-      console.log(url);
-      const response = await fetch(url);
-
-      //   console.log(response);
-
-      if (!response.ok) {
-        const text = await response.text();
-        this.logger.error(`Weather API Error: ${text}`);
-        throw new Error('날씨 정보를 가져오는데 실패했습니다.');
-      }
-
-      const data = await response.json();
-
-      if (!data.response?.body?.items?.item) {
-        this.logger.error('Invalid weather data format:', data);
-        throw new Error('날씨 데이터 형식이 올바르지 않습니다.');
-      }
-
-      return this.parseWeatherData(data);
-    } catch (error) {
-      this.logger.error('Weather API Error:', error);
-      throw new Error('날씨 정보를 가져오는데 실패했습니다.');
-    }
-  }
-
-  // UTC 기준 시간을 KST(UTC+9)로 변환하는 함수
-  private getKSTDate(): Date {
+  // base_date, base_time을 한 번에 산출 (한국 기상청 표준)
+  private getKMAStandardDateTime() {
     const now = new Date();
-    const kstDate = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
 
-    // 오전 1시 이전이면 이전 날짜로 처리
-    if (kstDate.getHours() < 1) {
-      kstDate.setDate(kstDate.getDate() - 1);
-      kstDate.setHours(kstDate.getHours() + 24); // 시간을 24시간 더해서 이전 날짜의 같은 시간으로 설정
-    }
+    let year = kst.getFullYear();
+    let month = String(kst.getMonth() + 1).padStart(2, '0');
+    let day = String(kst.getDate()).padStart(2, '0');
+    let hour = kst.getHours();
+    const minute = kst.getMinutes();
 
-    return kstDate;
-  }
-
-  private getBaseDate(): string {
-    const now = new Date();
-    const kstDate = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-    const minutes = kstDate.getMinutes();
-
-    // 40분 이전이면 이전 시각 데이터 사용
-    if (minutes < 40) {
-      kstDate.setHours(kstDate.getHours() - 1);
-      // 시간이 23시로 돌아갔을 때 이전 날짜로 처리
-      if (kstDate.getHours() === 23) {
-        kstDate.setDate(kstDate.getDate() - 1);
-      }
-    }
-
-    const year = kstDate.getFullYear();
-    const month = String(kstDate.getMonth() + 1).padStart(2, '0');
-    const day = String(kstDate.getDate()).padStart(2, '0');
-    return `${year}${month}${day}`;
-  }
-
-  private getBaseTime(): string {
-    const now = new Date();
-    const kstDate = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-    let hour = kstDate.getHours();
-    const minutes = kstDate.getMinutes();
-
-    // 40분 이전이면 이전 시각 데이터 사용
-    if (minutes < 40) {
+    if (minute < 40) {
       hour -= 1;
-      if (hour < 0) hour = 23;
+      if (hour < 0) {
+        const prev = new Date(kst.getTime() - 24 * 60 * 60 * 1000);
+        year = prev.getFullYear();
+        month = String(prev.getMonth() + 1).padStart(2, '0');
+        day = String(prev.getDate()).padStart(2, '0');
+        hour = 23;
+      }
     }
-    return `${String(hour).padStart(2, '0')}00`;
+    return {
+      base_date: `${year}${month}${day}`,
+      base_time: `${String(hour).padStart(2, '0')}00`,
+    };
+  }
+
+  // 지수 백오프 딜레이용
+  private async delay(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async getCurrentWeather(lat: number, lon: number) {
+    const grid = this.convertToGrid(lat, lon);
+    const { base_date, base_time } = this.getKMAStandardDateTime();
+
+    const params = new URLSearchParams({
+      serviceKey: process.env.WEATHER_API_KEY,
+      pageNo: '1',
+      numOfRows: '1000',
+      dataType: 'JSON',
+      base_date,
+      base_time,
+      nx: grid.x.toString(),
+      ny: grid.y.toString(),
+    });
+
+    const url = `http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst?${params}`;
+
+    const maxRetries = 3;
+    let attempt = 0;
+    let lastError: any = null;
+
+    while (attempt < maxRetries) {
+      try {
+        if (attempt > 0) {
+          this.logger.warn(
+            `[WeatherService] API 재시도: ${attempt}회차, ${Math.pow(2, attempt - 1)}초 대기`,
+          );
+          await this.delay(1000 * Math.pow(2, attempt - 1)); // 1, 2, 4초
+        }
+        const response = await fetch(url);
+
+        if (!response.ok) {
+          const text = await response.text();
+          this.logger.error(`Weather API Error: ${text}`);
+          lastError = new Error('날씨 정보를 가져오는데 실패했습니다.');
+          attempt++;
+          continue;
+        }
+
+        const data = await response.json();
+
+        if (!data.response?.body?.items?.item) {
+          this.logger.error('Invalid weather data format:', data);
+          lastError = new Error('날씨 데이터 형식이 올바르지 않습니다.');
+          attempt++;
+          continue;
+        }
+
+        return this.parseWeatherData(data);
+      } catch (error) {
+        this.logger.error('Weather API Error:', error);
+        lastError = error;
+        attempt++;
+        // 계속 재시도
+      }
+    }
+
+    // 최대 시도 이후에도 실패하면 예외 발생
+    throw lastError ?? new Error('날씨 정보를 가져오는데 실패했습니다.');
   }
 
   private parseWeatherData(data: any) {
