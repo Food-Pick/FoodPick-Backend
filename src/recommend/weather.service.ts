@@ -102,10 +102,15 @@ export class WeatherService {
   private getBaseDate(): string {
     const now = new Date();
     const kstDate = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    const minutes = kstDate.getMinutes();
 
-    // 오전 1시 이전이면 이전 날짜로 처리
-    if (kstDate.getHours() < 1) {
-      kstDate.setDate(kstDate.getDate() - 1);
+    // 40분 이전이면 이전 시각 데이터 사용
+    if (minutes < 40) {
+      kstDate.setHours(kstDate.getHours() - 1);
+      // 시간이 23시로 돌아갔을 때 이전 날짜로 처리
+      if (kstDate.getHours() === 23) {
+        kstDate.setDate(kstDate.getDate() - 1);
+      }
     }
 
     const year = kstDate.getFullYear();
@@ -115,9 +120,10 @@ export class WeatherService {
   }
 
   private getBaseTime(): string {
-    const now = this.getKSTDate();
-    let hour = now.getHours();
-    const minutes = now.getMinutes();
+    const now = new Date();
+    const kstDate = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    let hour = kstDate.getHours();
+    const minutes = kstDate.getMinutes();
 
     // 40분 이전이면 이전 시각 데이터 사용
     if (minutes < 40) {
