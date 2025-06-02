@@ -20,9 +20,12 @@ export interface GeminiApiResponse {
 @Injectable()
 export class GeminiRecommendService {
   private readonly logger = new Logger(GeminiRecommendService.name);
-  // private readonly GEMINI_MODEL = 'gemini-2.5-flash-preview-05-20';
-  private readonly GEMINI_MODEL = 'gemini-2.0-flash';
-  private readonly geminiClient: GoogleGenerativeAI;
+  //private readonly GEMINI_MODEL = 'gemini-2.0-flash';
+  //private readonly GEMINI_MODEL = 'gemini-2.0-flash-001';
+  private readonly GEMINI_MODEL = 'gemini-2.0-flash-lite-001';
+  //private readonly GEMINI_MODEL = 'gemini-2.5-flash-preview-05-20';
+  private readonly geminiClients: GoogleGenerativeAI[] = [];
+  private currentClientIndex = 0;
   private geminiReady: Promise<void>;
 
   constructor(
@@ -32,17 +35,37 @@ export class GeminiRecommendService {
     private restaurantService: RestaurantService,
     private configService: ConfigService,
   ) {
-    const apiKey = this.configService.get<string>('GEMINI_API_KEY');
-    if (!apiKey) {
-      this.logger.error('GEMINI_API_KEY is not set in environment variables.');
-      throw new Error('GEMINI_API_KEY is not configured.');
+    // API 키들을 배열로 초기화
+    const apiKeys: string[] = [];
+    for (let i = 1; i <= 20; i++) {
+      const key = this.configService.get<string>(
+        `GEMINI_API_${String(i).padStart(2, '0')}`,
+      );
+      if (key) {
+        apiKeys.push(key);
+      }
     }
-    this.geminiClient = new GoogleGenerativeAI(apiKey);
+
+    if (apiKeys.length === 0) {
+      this.logger.error('No GEMINI_API keys found in environment variables.');
+      throw new Error('GEMINI_API keys are not configured.');
+    }
+
+    // 각 API 키로 클라이언트 초기화
+    this.geminiClients = apiKeys.map((key) => new GoogleGenerativeAI(key));
     this.geminiReady = this.initGeminiClient();
   }
 
   private async initGeminiClient() {
-    // This method is now empty as the client is initialized in the constructor
+    // 클라이언트 초기화 로직이 필요하다면 여기에 추가
+  }
+
+  // API 키 순환을 위한 메서드
+  private getNextClient(): GoogleGenerativeAI {
+    const client = this.geminiClients[this.currentClientIndex];
+    this.currentClientIndex =
+      (this.currentClientIndex + 1) % this.geminiClients.length;
+    return client;
   }
 
   // UTC → KST 변환
@@ -59,7 +82,15 @@ export class GeminiRecommendService {
   }
 
   private getDayOfWeek(date: Date): string {
-    const dayNames = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
+    const dayNames = [
+      '일요일',
+      '월요일',
+      '화요일',
+      '수요일',
+      '목요일',
+      '금요일',
+      '토요일',
+    ];
     return dayNames[date.getDay()];
   }
 
@@ -69,10 +100,16 @@ export class GeminiRecommendService {
     userAgeGroup: string,
     userPricePreference: string,
     userFoodCategoryPreference: string[],
+    currentMealTime?: string,
   ) {
     await this.geminiReady;
-    // 1. 현재 날씨 정보
-    const weather = await this.weatherService.getCurrentWeather(lat, lon);
+
+    // 1. 날씨 정보와 findNearby를 병렬로 실행
+    const [weather, { entities: allRestaurants }] = await Promise.all([
+      this.weatherService.getCurrentWeather(lat, lon),
+      this.restaurantService.findNearby(lat, lon, 10000),
+    ]);
+
     const temperatureCelsius = parseFloat(weather.temperature);
     const precipitationAmount = parseFloat(weather.precipitation);
     const humidityPercentage = parseFloat(weather.humidity);
@@ -89,6 +126,17 @@ export class GeminiRecommendService {
     const currentDate = this.formatDate(kstDate);
     const dayOfWeek = this.getDayOfWeek(kstDate);
     const region = '대한민국';
+
+    const hour = kstDate.getHours();
+    let mealTime = currentMealTime;
+    if (!mealTime) {
+      if (hour >= 6 && hour < 10) mealTime = '아침';
+      else if (hour >= 10 && hour < 11) mealTime = '아점';
+      else if (hour >= 11 && hour < 14) mealTime = '점심';
+      else if (hour >= 14 && hour < 17) mealTime = '점저';
+      else if (hour >= 17 && hour < 21) mealTime = '저녁';
+      else mealTime = '야식';
+    }
 
     // 3. Gemini 프롬프트/페이로드
     const promptContent = `
@@ -118,6 +166,7 @@ export class GeminiRecommendService {
 recommendation_reason은 단순한 사실 나열을 넘어, 사용자의 현재 기분, 날씨, 현재 시간대와 요일, 그리고 한국의 문화적 배경과 같은 상황에 깊이 공감하며, 추천 메뉴가 가져다줄 긍정적인 경험(맛, 식감, 만족감, 위로, 에너지 등)을 감성적이고 친근한 문구로 상기시켜야 합니다.
 사용자의 입력 정보(나이대, 가격대, 시간, 온도, 선호 카테고리, 요일, 날짜 등)는 recommendation_reason에 직접적으로 언급하지 않고, 그 정보들이 내포하는 상황과 감정에 집중하여 묘사합니다.
 마치 실제 사람이 대화하듯이 친근하고 자연스러운 어조를 사용해주세요.
+추천 이유에 명확한 음식명칭을 포함하지 마십시요. 예를 들어 '소고기 뭇국밥' 이런 표현을 사용하지 마십시요. 대신 국밥 범용적인 카테고리를 사용해주세요.
 
     **[출력 형식 예시]**
     \`\`\`json
@@ -140,7 +189,6 @@ recommendation_reason은 단순한 사실 나열을 넘어, 사용자의 현재 
     }
     \`\`\`
     `;
-    
 
     const userPromptPayload = {
       user_preferences: {
@@ -154,7 +202,7 @@ recommendation_reason은 단순한 사실 나열을 넘어, 사용자의 현재 
         humidity_percentage: humidityPercentage,
       },
       current_context: {
-        current_time_hour: currentHour,
+        current_time_hour: mealTime + ' ' + currentHour + '시',
         region,
         current_date: currentDate,
         day_of_week: dayOfWeek,
@@ -169,7 +217,8 @@ recommendation_reason은 단순한 사실 나열을 넘어, 사용자의 현재 
     console.log(userPromptPayload);
     try {
       const startTime = Date.now();
-      const model = this.geminiClient.getGenerativeModel({ model: this.GEMINI_MODEL });
+      const client = this.getNextClient();
+      const model = client.getGenerativeModel({ model: this.GEMINI_MODEL });
       const result = await model.generateContent({
         contents: [{ role: 'user', parts: [{ text: userInput }] }],
         generationConfig: {
@@ -185,7 +234,6 @@ recommendation_reason은 단순한 사실 나열을 넘어, 사용자의 현재 
       const text = result.response.text();
       this.logger.debug(`Raw Gemini response: ${text}`);
       this.logger.log(`Gemini API 호출 완료 - 소요시간: ${executionTime}ms`);
-
 
       // JSON 추출 로직 개선
       let jsonString = text;
@@ -211,9 +259,16 @@ recommendation_reason은 단순한 사실 나열을 넘어, 사용자의 현재 
         throw new Error('Gemini 응답을 JSON으로 파싱할 수 없습니다.');
       }
 
-      if (!geminiResponse?.recommendation_options || !Array.isArray(geminiResponse.recommendation_options)) {
-        this.logger.error(`Invalid response structure: ${JSON.stringify(geminiResponse)}`);
-        throw new Error('Gemini 응답 형식이 예상과 다릅니다: recommendation_options가 없습니다.');
+      if (
+        !geminiResponse?.recommendation_options ||
+        !Array.isArray(geminiResponse.recommendation_options)
+      ) {
+        this.logger.error(
+          `Invalid response structure: ${JSON.stringify(geminiResponse)}`,
+        );
+        throw new Error(
+          'Gemini 응답 형식이 예상과 다릅니다: recommendation_options가 없습니다.',
+        );
       }
     } catch (error) {
       this.logger.error(`Gemini API call or parsing error: ${error.message}`);
@@ -227,18 +282,15 @@ recommendation_reason은 단순한 사실 나열을 넘어, 사용자의 현재 
     }
 
     // 4. Gemini가 추천한 태그 조합 → 음식점/메뉴 매칭 (기존 코드 그대로)
-    const { entities: allRestaurants } = await this.restaurantService.findNearby(lat, lon, 10000);
-
-    // [중간 결과: 메뉴 단위로 모으기]
     const menuLevelRecommendations = [];
-  
+
     for (const geminiOption of geminiResponse.recommendation_options) {
       const recommendedTags = geminiOption.recommended_tags;
       const recommendationReason = geminiOption.recommendation_reason;
-  
+
       for (const restaurant of allRestaurants) {
         if (!restaurant.menu_tags) continue;
-  
+
         let parsedRestaurantData: any;
         try {
           parsedRestaurantData =
@@ -251,7 +303,7 @@ recommendation_reason은 단순한 사실 나열을 넘어, 사용자의 현재 
           );
           continue;
         }
-  
+
         const actualMenuTagsObj = parsedRestaurantData.menu_tags;
         if (
           !actualMenuTagsObj ||
@@ -260,7 +312,7 @@ recommendation_reason은 단순한 사실 나열을 넘어, 사용자의 현재 
         ) {
           continue;
         }
-  
+
         let restaurantPhoto = restaurant['photo'];
         if (typeof restaurantPhoto === 'string') {
           try {
@@ -270,40 +322,46 @@ recommendation_reason은 단순한 사실 나열을 넘어, 사용자의 현재 
         } else if (Array.isArray(restaurantPhoto)) {
           restaurantPhoto = restaurantPhoto[0];
         }
-  
-        const ESSENTIAL_TAGS = ["음식카테고리", "조리방식"];
-        const MIN_MATCH_RATIO = 0.6;
-  
+
+        const ESSENTIAL_TAGS = ['음식카테고리', '조리방식', '주요재료'];
+        const MIN_MATCH_RATIO = 0.8;
+
         for (const [menuName, menuTags] of Object.entries(actualMenuTagsObj)) {
           let matchedCategoryCount = 0;
           let totalCategoryCount = 0;
           let isEssentialMismatch = false;
-  
+
           for (const tagCategory in recommendedTags) {
             totalCategoryCount++;
             const requiredTags = recommendedTags[tagCategory];
             const actualMenuCategoryTags = (menuTags as any)[tagCategory];
             const isEssential = ESSENTIAL_TAGS.includes(tagCategory);
-  
-            if (!actualMenuCategoryTags || !Array.isArray(actualMenuCategoryTags)) {
+
+            if (
+              !actualMenuCategoryTags ||
+              !Array.isArray(actualMenuCategoryTags)
+            ) {
               if (isEssential) isEssentialMismatch = true;
               continue;
             }
-  
+
             const hasMatchingTag = requiredTags.some((requiredTag) =>
               actualMenuCategoryTags.includes(requiredTag),
             );
-  
+
             if (hasMatchingTag) {
               matchedCategoryCount++;
             } else {
               if (isEssential) isEssentialMismatch = true;
             }
           }
-  
+
           if (isEssentialMismatch) continue;
-          const matchRatio = totalCategoryCount > 0 ? matchedCategoryCount / totalCategoryCount : 0;
-  
+          const matchRatio =
+            totalCategoryCount > 0
+              ? matchedCategoryCount / totalCategoryCount
+              : 0;
+
           if (matchRatio >= MIN_MATCH_RATIO) {
             let specificMenuImageUrl: string | null = null;
             try {
@@ -317,20 +375,20 @@ recommendation_reason은 단순한 사실 나열을 넘어, 사용자의 현재 
                 }
               }
             } catch {}
-  
-            // ⭐️ 룰기반과 동일한 구조로 추가!
+
+            // 룰기반과 동일한 구조로 추가!
             menuLevelRecommendations.push({
               restaurant_id: restaurant.id,
               restaurant_name: restaurant['사업장명'],
               restaurant_image_url: restaurantPhoto || null,
               menu: menuName,
               menu_image_url: specificMenuImageUrl,
-              matched_rules: ["LLM_응용_추천"],
+              matched_rules: ['LLM_응용_추천'],
               descriptions: [recommendationReason],
               matched_tags: [recommendedTags],
               applied_rules_details: [
                 {
-                  name: "LLM_응용_추천",
+                  name: 'LLM_응용_추천',
                   description: recommendationReason,
                   weather_condition: {},
                   meal_time_condition: [],
@@ -342,49 +400,53 @@ recommendation_reason은 단순한 사실 나열을 넘어, 사용자의 현재 
         }
       }
     }
-  
-    // === [★ 중요: restaurant_id, restaurant_name, ...별로 그룹화!] ===
-    const groupedRecommendations = menuLevelRecommendations.reduce((acc, curr) => {
-      const existingRestaurant = acc.find(
-        (item) => item.restaurant_id === curr.restaurant_id,
-      );
-      if (existingRestaurant) {
-        existingRestaurant.menus.push({
-          name: curr.menu,
-          image_url: curr.menu_image_url,
-          matched_rules: curr.matched_rules,
-          descriptions: curr.descriptions,
-          matched_tags: curr.matched_tags,
-          applied_rules_details: curr.applied_rules_details,
-        });
-      } else {
-        acc.push({
-          restaurant_id: curr.restaurant_id,
-          restaurant_name: curr.restaurant_name,
-          restaurant_image_url: curr.restaurant_image_url,
-          menus: [
-            {
-              name: curr.menu,
-              image_url: curr.menu_image_url,
-              matched_rules: curr.matched_rules,
-              descriptions: curr.descriptions,
-              matched_tags: curr.matched_tags,
-              applied_rules_details: curr.applied_rules_details,
-            },
-          ],
-        });
-      }
-      return acc;
-    }, []);
-  
+
+    // === [ 중요: restaurant_id, restaurant_name, ...별로 그룹화] ===
+    const groupedRecommendations = menuLevelRecommendations.reduce(
+      (acc, curr) => {
+        const existingRestaurant = acc.find(
+          (item) => item.restaurant_id === curr.restaurant_id,
+        );
+        if (existingRestaurant) {
+          existingRestaurant.menus.push({
+            name: curr.menu,
+            image_url: curr.menu_image_url,
+            matched_rules: curr.matched_rules,
+            descriptions: curr.descriptions,
+            matched_tags: curr.matched_tags,
+            applied_rules_details: curr.applied_rules_details,
+          });
+        } else {
+          acc.push({
+            restaurant_id: curr.restaurant_id,
+            restaurant_name: curr.restaurant_name,
+            restaurant_image_url: curr.restaurant_image_url,
+            menus: [
+              {
+                name: curr.menu,
+                image_url: curr.menu_image_url,
+                matched_rules: curr.matched_rules,
+                descriptions: curr.descriptions,
+                matched_tags: curr.matched_tags,
+                applied_rules_details: curr.applied_rules_details,
+              },
+            ],
+          });
+        }
+        return acc;
+      },
+      [],
+    );
+
     // (shuffling/슬라이싱 등 필요에 따라)
     const shuffled = groupedRecommendations.sort(() => 0.5 - Math.random());
     const selected = shuffled.slice(0, 25);
-  
-    // ⭐️ 룰 기반 API와 완전히 동일 포맷 반환!
+
+    //  룰 기반 API와 완전히 동일 포맷 반환!
     return {
       weather,
+      mealTime,
       recommendations: selected,
     };
   }
-}  
+}
