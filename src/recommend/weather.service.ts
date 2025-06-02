@@ -105,17 +105,42 @@ export class WeatherService {
           );
           await this.delay(1000 * Math.pow(2, attempt - 1)); // 1, 2, 4초
         }
-        const response = await fetch(url);
 
-        if (!response.ok) {
-          const text = await response.text();
-          this.logger.error(`Weather API Error: ${text}`);
-          lastError = new Error('날씨 정보를 가져오는데 실패했습니다.');
+        const response = await fetch(url);
+        const responseText = await response.text();
+
+        // 응답이 HTML인지 확인
+        if (
+          responseText.trim().startsWith('<!DOCTYPE') ||
+          responseText.trim().startsWith('<')
+        ) {
+          this.logger.error(
+            'Weather API returned HTML instead of JSON:',
+            responseText.substring(0, 200),
+          );
+          lastError = new Error('날씨 API가 HTML을 반환했습니다.');
           attempt++;
           continue;
         }
 
-        const data = await response.json();
+        // JSON 파싱 시도
+        let data;
+        try {
+          data = JSON.parse(responseText);
+        } catch (parseError) {
+          this.logger.error('Weather API response parsing error:', parseError);
+          this.logger.error('Response text:', responseText.substring(0, 200));
+          lastError = new Error('날씨 데이터 파싱에 실패했습니다.');
+          attempt++;
+          continue;
+        }
+
+        if (!response.ok) {
+          this.logger.error(`Weather API Error: ${JSON.stringify(data)}`);
+          lastError = new Error('날씨 정보를 가져오는데 실패했습니다.');
+          attempt++;
+          continue;
+        }
 
         if (!data.response?.body?.items?.item) {
           this.logger.error('Invalid weather data format:', data);
@@ -129,7 +154,6 @@ export class WeatherService {
         this.logger.error('Weather API Error:', error);
         lastError = error;
         attempt++;
-        // 계속 재시도
       }
     }
 
