@@ -9,7 +9,11 @@ import { GeminiRecommendService } from './gemini-recommend.service';
 import { ConfigModule } from '@nestjs/config';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([RestaurantMerged]), RestaurantModule, ConfigModule],
+  imports: [
+    TypeOrmModule.forFeature([RestaurantMerged]),
+    RestaurantModule,
+    ConfigModule,
+  ],
   controllers: [RecommendController],
   providers: [RecommendService, WeatherService, GeminiRecommendService],
   exports: [RecommendService],
