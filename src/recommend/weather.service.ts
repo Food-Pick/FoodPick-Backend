@@ -184,6 +184,7 @@ export class WeatherService {
       }
     });
 
+    Logger.log(weatherInfo);
     return weatherInfo;
   }
 }
