@@ -48,8 +48,14 @@ export class RestaurantService {
     const distance = 10000; // 10km
     const degreeRadius = distance / 111000;
 
+    // 입력값 sanitization
+    const sanitizedName = name.replace(/[^\w\s가-힣]/g, '').trim();
+    if (!sanitizedName) {
+      return [];
+    }
+
     console.log('Search parameters:', {
-      name,
+      name: sanitizedName,
       lat,
       lng,
       distance,
@@ -76,7 +82,6 @@ export class RestaurantService {
     `,
         'dist',
       )
-      // 공간 필터를 먼저 `.where()`에 적용
       .where(
         `
     restaurant.geom && ST_Expand(ST_SetSRID(ST_MakePoint(:lng, :lat), 4326), :degreeRadius)
@@ -88,9 +93,8 @@ export class RestaurantService {
     `,
         { lat, lng, distance, degreeRadius },
       )
-      // 문자열 필터: pgroonga 인덱스를 활용
       .andWhere('restaurant.menu &@~ :keyword', {
-        keyword: name,
+        keyword: sanitizedName,
       })
       .orderBy('dist', 'ASC')
       .limit(25)
@@ -99,7 +103,6 @@ export class RestaurantService {
 
     console.log('Query result:', {
       resultCount: result.length,
-      // firstResult: result[0],
     });
 
     return result;
@@ -149,7 +152,7 @@ export class RestaurantService {
         { lat, lng, distance, degreeRadius },
       )
       .orderBy('dist', 'ASC')
-      .limit(50)
+      .limit(100)
       .cache(true)
       .getRawAndEntities();
   }
