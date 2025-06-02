@@ -6,7 +6,6 @@ import { RestaurantMerged } from '../entity/restaurant-merged.entity';
 import { WeatherService } from './weather.service';
 import { RestaurantService } from '../restaurant/restaurant.service';
 import { ConfigService } from '@nestjs/config';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 
 interface GeminiRecommendationOption {
   recommended_tags: { [key: string]: string[] };
@@ -19,14 +18,11 @@ export interface GeminiApiResponse {
 
 @Injectable()
 export class GeminiRecommendService {
-  private readonly logger = new Logger(GeminiRecommendService.name);
-  //private readonly GEMINI_MODEL = 'gemini-2.0-flash';
-  //private readonly GEMINI_MODEL = 'gemini-2.0-flash-001';
-  private readonly GEMINI_MODEL = 'gemini-2.0-flash-lite-001';
-  //private readonly GEMINI_MODEL = 'gemini-2.5-flash-preview-05-20';
-  private readonly geminiClients: GoogleGenerativeAI[] = [];
+  private readonly GEMINI_MODEL = 'gemini-2.5-flash-preview-05-20';
+  private geminiClients = [];
   private currentClientIndex = 0;
   private geminiReady: Promise<void>;
+  private readonly logger = new Logger(GeminiRecommendService.name);
 
   constructor(
     @InjectRepository(RestaurantMerged)
@@ -35,33 +31,23 @@ export class GeminiRecommendService {
     private restaurantService: RestaurantService,
     private configService: ConfigService,
   ) {
-    // API 키들을 배열로 초기화
+    this.geminiReady = this.initClients();
+  }
+
+  private async initClients() {
     const apiKeys: string[] = [];
     for (let i = 1; i <= 20; i++) {
       const key = this.configService.get<string>(
         `GEMINI_API_${String(i).padStart(2, '0')}`,
       );
-      if (key) {
-        apiKeys.push(key);
-      }
+      if (key) apiKeys.push(key);
     }
-
-    if (apiKeys.length === 0) {
-      this.logger.error('No GEMINI_API keys found in environment variables.');
-      throw new Error('GEMINI_API keys are not configured.');
-    }
-
-    // 각 API 키로 클라이언트 초기화
-    this.geminiClients = apiKeys.map((key) => new GoogleGenerativeAI(key));
-    this.geminiReady = this.initGeminiClient();
+    if (apiKeys.length === 0) throw new Error('No keys!');
+    const { GoogleGenAI } = await import('@google/genai');
+    this.geminiClients = apiKeys.map((key) => new GoogleGenAI({ apiKey: key }));
   }
 
-  private async initGeminiClient() {
-    // 클라이언트 초기화 로직이 필요하다면 여기에 추가
-  }
-
-  // API 키 순환을 위한 메서드
-  private getNextClient(): GoogleGenerativeAI {
+  private getNextClient() {
     const client = this.geminiClients[this.currentClientIndex];
     this.currentClientIndex =
       (this.currentClientIndex + 1) % this.geminiClients.length;
@@ -104,7 +90,7 @@ export class GeminiRecommendService {
   ) {
     await this.geminiReady;
 
-    // 1. 날씨 정보와 findNearby를 병렬로 실행
+    // 1. 날씨와 음식점 목록 병렬 조회
     const [weather, { entities: allRestaurants }] = await Promise.all([
       this.weatherService.getCurrentWeather(lat, lon),
       this.restaurantService.findNearby(lat, lon, 10000),
@@ -120,25 +106,24 @@ export class GeminiRecommendService {
           : '눈'
         : '없음';
 
-    // 2. 현재 시간/날짜 정보
+    // 2. 현재 시간 및 날짜 정보
     const kstDate = this.getKSTDate();
     const currentHour = kstDate.getHours();
     const currentDate = this.formatDate(kstDate);
     const dayOfWeek = this.getDayOfWeek(kstDate);
     const region = '대한민국';
 
-    const hour = kstDate.getHours();
     let mealTime = currentMealTime;
     if (!mealTime) {
-      if (hour >= 6 && hour < 10) mealTime = '아침';
-      else if (hour >= 10 && hour < 11) mealTime = '아점';
-      else if (hour >= 11 && hour < 14) mealTime = '점심';
-      else if (hour >= 14 && hour < 17) mealTime = '점저';
-      else if (hour >= 17 && hour < 21) mealTime = '저녁';
+      if (currentHour >= 6 && currentHour < 10) mealTime = '아침';
+      else if (currentHour >= 10 && currentHour < 11) mealTime = '아점';
+      else if (currentHour >= 11 && currentHour < 14) mealTime = '점심';
+      else if (currentHour >= 14 && currentHour < 17) mealTime = '점저';
+      else if (currentHour >= 17 && currentHour < 21) mealTime = '저녁';
       else mealTime = '야식';
     }
 
-    // 3. Gemini 프롬프트/페이로드
+    // 3. Gemini 프롬프트 준비
     const promptContent = `
     당신은 사용자의 선호도 정보, 현재 기상 정보, 현재 시간대, 그리고 현재 지역과 날짜/요일을 종합적으로 분석하여, 음식 메뉴 추천에 사용할 최적의 태그 조합을 생성하는 전문 큐레이터입니다. 당신은 주어진 모든 정보를 깊이 이해하고, 사용자에게 가장 적합한 음식 메뉴의 특징(태그)을 파악하여 데이터베이스 쿼리에 활용될 JSON 형식의 태그 목록을 생성해야 합니다. 특히, 사용자의 현재 상황(선호도, 기상, 시간, 요일, 지역적 맥락)에 완벽하게 어울리는 메뉴 특징을 제안하는 동시에, 고객에게 감성적으로 깊이 다가가는 추천 이유를 제공하는 것이 당신의 핵심 역할입니다.
     
@@ -214,42 +199,40 @@ recommendation_reason은 단순한 사실 나열을 넘어, 사용자의 현재 
 
     let geminiResponse: GeminiApiResponse;
 
-    console.log(userPromptPayload);
     try {
       const startTime = Date.now();
       const client = this.getNextClient();
-      const model = client.getGenerativeModel({ model: this.GEMINI_MODEL });
-      const result = await model.generateContent({
+      // 최신 방식: generateContent에서 model 파라미터 직접 지정
+      this.logger.log('GEMINI API 호출');
+      this.logger.log(userPromptPayload);
+      const result = await client.models.generateContent({
+        model: this.GEMINI_MODEL,
         contents: [{ role: 'user', parts: [{ text: userInput }] }],
-        generationConfig: {
-          temperature: 0.7,
-          topP: 1,
-          topK: 1,
-          maxOutputTokens: 65536,
+        config: {
+          thinkingConfig: {
+            thinkingBudget: 0,
+          },
         },
       });
 
+      this.logger.log(result);
       const endTime = Date.now();
       const executionTime = endTime - startTime;
-      const text = result.response.text();
+      const text = result.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
       this.logger.debug(`Raw Gemini response: ${text}`);
       this.logger.log(`Gemini API 호출 완료 - 소요시간: ${executionTime}ms`);
 
       // JSON 추출 로직 개선
       let jsonString = text;
-      // 마크다운 코드 블록에서 JSON 추출
       const jsonMatch = text.match(/```(?:json)?\n([\s\S]+?)\n```/);
       if (jsonMatch && jsonMatch[1]) {
         jsonString = jsonMatch[1].trim();
       } else {
-        // 마크다운이 없는 경우, 텍스트에서 JSON 객체만 추출
         const jsonObjectMatch = text.match(/\{[\s\S]*\}/);
         if (jsonObjectMatch) {
           jsonString = jsonObjectMatch[0];
         }
       }
-
-      // this.logger.debug(`Extracted JSON string: ${jsonString}`);
 
       try {
         geminiResponse = JSON.parse(jsonString);
@@ -273,7 +256,7 @@ recommendation_reason은 단순한 사실 나열을 넘어, 사용자의 현재 
     } catch (error) {
       this.logger.error(`Gemini API call or parsing error: ${error.message}`);
       return {
-        weather: weather,
+        weather,
         recommendations: [],
         geminiResponse: {
           recommendation_options: [],
@@ -281,7 +264,7 @@ recommendation_reason은 단순한 사실 나열을 넘어, 사용자의 현재 
       };
     }
 
-    // 4. Gemini가 추천한 태그 조합 → 음식점/메뉴 매칭 (기존 코드 그대로)
+    // 4. Gemini 추천 → 음식점/메뉴 매칭
     const menuLevelRecommendations = [];
 
     for (const geminiOption of geminiResponse.recommendation_options) {
@@ -376,7 +359,6 @@ recommendation_reason은 단순한 사실 나열을 넘어, 사용자의 현재 
               }
             } catch {}
 
-            // 룰기반과 동일한 구조로 추가!
             menuLevelRecommendations.push({
               restaurant_id: restaurant.id,
               restaurant_name: restaurant['사업장명'],
@@ -401,7 +383,7 @@ recommendation_reason은 단순한 사실 나열을 넘어, 사용자의 현재 
       }
     }
 
-    // === [ 중요: restaurant_id, restaurant_name, ...별로 그룹화] ===
+    // === 음식점별 그룹화 ===
     const groupedRecommendations = menuLevelRecommendations.reduce(
       (acc, curr) => {
         const existingRestaurant = acc.find(
