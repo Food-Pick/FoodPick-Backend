@@ -23,9 +23,19 @@ export class RestaurantController {
     @Query('lat') lat: number,
     @Query('lng') lng: number,
   ) {
+    // 입력값 검증
+    if (!food || typeof food !== 'string') {
+      return [];
+    }
+
+    // 좌표값 검증
+    if (!lat || !lng || isNaN(Number(lat)) || isNaN(Number(lng))) {
+      return [];
+    }
+
     console.log('searchfoods 호출');
     console.log(food, lat, lng);
-    return this.restaurantService.searchfoods(food, lat, lng);
+    return this.restaurantService.searchfoods(food, Number(lat), Number(lng));
   }
 
   @Get('search')
