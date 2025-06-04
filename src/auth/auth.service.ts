@@ -1,6 +1,7 @@
 import {
   ConflictException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { LoginDto } from './dto/login.dto';
@@ -10,6 +11,7 @@ import { Repository } from 'typeorm';
 import { Auth } from '../entity/auth.entity';
 import * as bcrypt from 'bcrypt';
 import { IdCheckDto } from './dto/id-check.dto';
+import { UpdateProfileDto } from './dto/updateprofile.dto';
 
 @Injectable()
 export class AuthService {
@@ -110,5 +112,25 @@ export class AuthService {
 
     await this.authRepository.save(user);
     return { message: '회원가입 성공' };
+  }
+
+  async updateProfile(updateProfileDto: UpdateProfileDto) {
+    const user = await this.authRepository.findOne({
+      where: { userId: updateProfileDto.id, email: updateProfileDto.email },
+    });
+
+    if (!user || user.email !== updateProfileDto.email) {
+      throw new NotFoundException('사용자를 찾을 수 없습니다.');
+    }
+
+    user.nickname = updateProfileDto.nickname;
+    user.email = updateProfileDto.email;
+    user.gender = updateProfileDto.gender;
+    user.age = updateProfileDto.age;
+    user.price = updateProfileDto.price;
+    user.favorite_food = updateProfileDto.favorite_food;
+
+    await this.authRepository.save(user);
+    return { message: '프로필 업데이트 성공' };
   }
 }

@@ -3,7 +3,7 @@ import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { IdCheckDto } from './dto/id-check.dto';
-
+import { UpdateProfileDto } from './dto/updateprofile.dto';
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
@@ -33,5 +33,12 @@ export class AuthController {
     console.log('register 호출');
     console.log(registerDto);
     return this.authService.register(registerDto);
+  }
+
+  @Post('update-profile')
+  async updateProfile(@Body() updateProfileDto: UpdateProfileDto) {
+    console.log('update-profile 호출');
+    console.log(updateProfileDto);
+    return this.authService.updateProfile(updateProfileDto);
   }
 }
