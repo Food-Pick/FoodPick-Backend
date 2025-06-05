@@ -1,5 +1,12 @@
 // src/recommend/dto/get-recommendation.dto.ts
-import { IsNumber, IsOptional, IsString, IsArray, IsIn, IsNotEmpty } from 'class-validator';
+import {
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsArray,
+  IsIn,
+  IsNotEmpty
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class GetRecommendationDto {
@@ -32,7 +39,6 @@ export class GetRecommendationDto {
   userPricePreference?: string; // 예: "1만원대", "2만원대"
 
   @IsOptional()
-  @IsArray()
   @IsString({ each: true }) // 배열의 각 요소가 문자열인지 검사
   userFoodCategoryPreference?: string[]; // 예: ["한식", "양식", "중식"]
 }

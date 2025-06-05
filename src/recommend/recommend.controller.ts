@@ -41,7 +41,11 @@ export class RecommendController {
       recommendationType,
       userAgeGroup,
       userPricePreference,
-      userFoodCategoryPreference,
+      userFoodCategoryPreference = Array.isArray(
+        query.userFoodCategoryPreference,
+      )
+        ? query.userFoodCategoryPreference
+        : [query.userFoodCategoryPreference],
     } = query;
 
     this.logger.log(

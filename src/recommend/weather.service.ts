@@ -80,7 +80,8 @@ export class WeatherService {
     const grid = this.convertToGrid(lat, lon);
     const { base_date, base_time } = this.getKMAStandardDateTime();
 
-    const params = new URLSearchParams({
+    // 초단기실황 API 요청
+    const ncstParams = new URLSearchParams({
       serviceKey: process.env.WEATHER_API_KEY,
       pageNo: '1',
       numOfRows: '1000',
@@ -91,7 +92,21 @@ export class WeatherService {
       ny: grid.y.toString(),
     });
 
-    const url = `http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst?${params}`;
+    const ncstUrl = `http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst?${ncstParams}`;
+
+    // 초단기예보 API 요청
+    const fcstParams = new URLSearchParams({
+      serviceKey: process.env.WEATHER_API_KEY,
+      pageNo: '1',
+      numOfRows: '1000',
+      dataType: 'JSON',
+      base_date,
+      base_time,
+      nx: grid.x.toString(),
+      ny: grid.y.toString(),
+    });
+
+    const fcstUrl = `http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtFcst?${fcstParams}`;
 
     const maxRetries = 3;
     let attempt = 0;
@@ -106,17 +121,36 @@ export class WeatherService {
           await this.delay(1000 * Math.pow(2, attempt - 1)); // 1, 2, 4초
         }
 
-        const response = await fetch(url);
-        const responseText = await response.text();
+        // 두 API를 병렬로 요청
+        const [ncstResponse, fcstResponse] = await Promise.all([
+          fetch(ncstUrl),
+          fetch(fcstUrl),
+        ]);
 
-        // 응답이 HTML인지 확인
+        // 초단기실황 데이터 처리
+        const ncstText = await ncstResponse.text();
         if (
-          responseText.trim().startsWith('<!DOCTYPE') ||
-          responseText.trim().startsWith('<')
+          ncstText.trim().startsWith('<!DOCTYPE') ||
+          ncstText.trim().startsWith('<')
         ) {
           this.logger.error(
             'Weather API returned HTML instead of JSON:',
-            responseText.substring(0, 200),
+            ncstText.substring(0, 200),
+          );
+          lastError = new Error('날씨 API가 HTML을 반환했습니다.');
+          attempt++;
+          continue;
+        }
+
+        // 초단기예보 데이터 처리
+        const fcstText = await fcstResponse.text();
+        if (
+          fcstText.trim().startsWith('<!DOCTYPE') ||
+          fcstText.trim().startsWith('<')
+        ) {
+          this.logger.error(
+            'Weather API returned HTML instead of JSON:',
+            fcstText.substring(0, 200),
           );
           lastError = new Error('날씨 API가 HTML을 반환했습니다.');
           attempt++;
@@ -124,32 +158,40 @@ export class WeatherService {
         }
 
         // JSON 파싱 시도
-        let data;
+        let ncstData, fcstData;
         try {
-          data = JSON.parse(responseText);
+          ncstData = JSON.parse(ncstText);
+          fcstData = JSON.parse(fcstText);
         } catch (parseError) {
           this.logger.error('Weather API response parsing error:', parseError);
-          this.logger.error('Response text:', responseText.substring(0, 200));
           lastError = new Error('날씨 데이터 파싱에 실패했습니다.');
           attempt++;
           continue;
         }
 
-        if (!response.ok) {
-          this.logger.error(`Weather API Error: ${JSON.stringify(data)}`);
+        if (!ncstResponse.ok || !fcstResponse.ok) {
+          this.logger.error(
+            `Weather API Error: ${JSON.stringify(ncstData)} ${JSON.stringify(fcstData)}`,
+          );
           lastError = new Error('날씨 정보를 가져오는데 실패했습니다.');
           attempt++;
           continue;
         }
 
-        if (!data.response?.body?.items?.item) {
-          this.logger.error('Invalid weather data format:', data);
+        if (
+          !ncstData.response?.body?.items?.item ||
+          !fcstData.response?.body?.items?.item
+        ) {
+          this.logger.error('Invalid weather data format:', {
+            ncstData,
+            fcstData,
+          });
           lastError = new Error('날씨 데이터 형식이 올바르지 않습니다.');
           attempt++;
           continue;
         }
 
-        return this.parseWeatherData(data);
+        return this.parseWeatherData(ncstData, fcstData);
       } catch (error) {
         this.logger.error('Weather API Error:', error);
         lastError = error;
@@ -161,8 +203,9 @@ export class WeatherService {
     throw lastError ?? new Error('날씨 정보를 가져오는데 실패했습니다.');
   }
 
-  private parseWeatherData(data: any) {
-    const items = data.response.body.items.item;
+  private parseWeatherData(ncstData: any, fcstData: any) {
+    const ncstItems = ncstData.response.body.items.item;
+    const fcstItems = fcstData.response.body.items.item;
 
     const weatherInfo: any = {
       temperature: null, // T1H
@@ -174,9 +217,16 @@ export class WeatherService {
       windDirection: null, // VEC
       eastWestWind: null, // UUU
       northSouthWind: null, // VVV
+      pcpLevel: null, // PCP
+      pcpDesc: null, // PCP_DESC
+      snoLevel: null, // SNO
+      snoDesc: null, // SNO_DESC
+      wsdLevel: null, // WSD
+      wsdDesc: null, // WSD_DESC
     };
 
-    items.forEach((item: any) => {
+    // 초단기실황 데이터 파싱
+    ncstItems.forEach((item: any) => {
       switch (item.category) {
         case 'T1H': // 기온
           weatherInfo.temperature = item.obsrValue;
@@ -189,9 +239,6 @@ export class WeatherService {
           break;
         case 'REH': // 습도
           weatherInfo.humidity = item.obsrValue;
-          break;
-        case 'SKY': // 하늘상태
-          weatherInfo.sky = item.obsrValue;
           break;
         case 'WSD': // 풍속
           weatherInfo.windSpeed = item.obsrValue;
@@ -207,6 +254,84 @@ export class WeatherService {
           break;
       }
     });
+
+    // 초단기예보 데이터에서 하늘상태(SKY) 파싱
+    const skyItems = fcstItems.filter((item: any) => item.category === 'SKY');
+    if (skyItems.length > 0) {
+      // 현재 시간에 가장 가까운 예보 데이터 찾기
+      const now = new Date();
+      const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+      const currentHour = kst.getHours();
+
+      // 가장 가까운 시간의 예보 찾기
+      const closestSkyItem = skyItems.reduce((closest: any, current: any) => {
+        const forecastHour = parseInt(current.fcstTime.substring(0, 2));
+        const currentDiff = Math.abs(forecastHour - currentHour);
+        const closestDiff = Math.abs(
+          parseInt(closest.fcstTime.substring(0, 2)) - currentHour,
+        );
+
+        // 현재 시간이 예보 시간보다 이전이면 무시
+        if (forecastHour < currentHour) return closest;
+
+        return currentDiff < closestDiff ? current : closest;
+      });
+
+      weatherInfo.sky = closestSkyItem.fcstValue;
+    }
+
+    // 초단기예보 데이터에서 정성정보 파싱
+    // 강수량(PCP)
+    const pcpItem = fcstItems.find((item: any) => item.category === 'PCP');
+    if (pcpItem) {
+      weatherInfo.pcpLevel = pcpItem.fcstValue;
+      switch (pcpItem.fcstValue) {
+        case '1':
+          weatherInfo.pcpDesc = '약한 비';
+          break;
+        case '2':
+          weatherInfo.pcpDesc = '보통 비';
+          break;
+        case '3':
+          weatherInfo.pcpDesc = '강한 비';
+          break;
+        default:
+          weatherInfo.pcpDesc = undefined;
+      }
+    }
+    // 눈의양(SNO)
+    const snoItem = fcstItems.find((item: any) => item.category === 'SNO');
+    if (snoItem) {
+      weatherInfo.snoLevel = snoItem.fcstValue;
+      switch (snoItem.fcstValue) {
+        case '1':
+          weatherInfo.snoDesc = '보통 눈';
+          break;
+        case '2':
+          weatherInfo.snoDesc = '많은 눈';
+          break;
+        default:
+          weatherInfo.snoDesc = undefined;
+      }
+    }
+    // 풍속(WSD)
+    const wsdItem = fcstItems.find((item: any) => item.category === 'WSD');
+    if (wsdItem) {
+      weatherInfo.wsdLevel = wsdItem.fcstValue;
+      switch (wsdItem.fcstValue) {
+        case '1':
+          weatherInfo.wsdDesc = '약한 바람';
+          break;
+        case '2':
+          weatherInfo.wsdDesc = '약간 강한 바람';
+          break;
+        case '3':
+          weatherInfo.wsdDesc = '강한 바람';
+          break;
+        default:
+          weatherInfo.wsdDesc = undefined;
+      }
+    }
 
     Logger.log(weatherInfo);
     return weatherInfo;

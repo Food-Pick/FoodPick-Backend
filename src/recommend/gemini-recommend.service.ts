@@ -105,6 +105,14 @@ export class GeminiRecommendService {
           ? '비'
           : '눈'
         : '없음';
+    const skyStatus =
+      weather.sky === '1'
+        ? '맑음'
+        : weather.sky === '3'
+          ? '구름많음'
+          : weather.sky === '4'
+            ? '흐림'
+            : '정보없음';
 
     // 2. 현재 시간 및 날짜 정보
     const kstDate = this.getKSTDate();
@@ -125,7 +133,8 @@ export class GeminiRecommendService {
 
     // 3. Gemini 프롬프트 준비
     const promptContent = `
-    당신은 사용자의 선호도 정보, 현재 기상 정보, 현재 시간대, 그리고 현재 지역과 날짜/요일을 종합적으로 분석하여, 음식 메뉴 추천에 사용할 최적의 태그 조합을 생성하는 전문 큐레이터입니다. 당신은 주어진 모든 정보를 깊이 이해하고, 사용자에게 가장 적합한 음식 메뉴의 특징(태그)을 파악하여 데이터베이스 쿼리에 활용될 JSON 형식의 태그 목록을 생성해야 합니다. 특히, 사용자의 현재 상황(선호도, 기상, 시간, 요일, 지역적 맥락)에 완벽하게 어울리는 메뉴 특징을 제안하는 동시에, 고객에게 감성적으로 깊이 다가가는 추천 이유를 제공하는 것이 당신의 핵심 역할입니다.
+    당신은 사용자의 선호도 정보, 현재 기상 정보(온도, 강수, 습도, 하늘상태), 현재 시간대, 그리고 현재 지역과 날짜/요일을 종합적으로 분석하여, 주변 음식점의 음식 메뉴 추천에 사용할 최적의 태그 조합을 생성하는 전문 큐레이터입니다. 당신은 주어진 모든 정보를 깊이 이해하고, 사용자에게 가장 적합한 음식 메뉴의 특징(태그)을 파악하여 데이터베이스 쿼리에 활용될 JSON 형식의 태그 목록을 생성해야 합니다. 특히, 사용자의 현재 상황(선호도, 기상, 시간, 요일, 지역적 맥락)에 완벽하게 어울리는 메뉴 특징을 제안하는 동시에, 고객에게 감성적으로 깊이 다가가는 추천 이유를 제공하는 것이 당신의 핵심 역할입니다.
+    사용자가 주변 음식점을 찾는것에 도움을 줘야하며. 배달, 간편식류의 추천형태는 아닙니다.
     
     **[기존 음식 메뉴 태깅 기준 및 선택지]**
     (이전에 Gemini가 학습하거나 참고했던 태깅 기준을 다시 한번 명시적으로 제공하여, 일관성 있는 태그 생성을 유도합니다. 아래 내용을 그대로 사용해주세요.)
@@ -140,7 +149,7 @@ export class GeminiRecommendService {
     8.  **가격대**: (가격 정보가 없거나 "변동", "싯가", "문의" 등 숫자로 판단 불가능한 경우: "가격문의필요" (또는 "가격정보없음"), 10000원 미만: "1만원미만", 10000원 이상 20000원 미만: "1만원대", 20000원 이상 30000원 미만: "2만원대", 30000원 이상 50000원 미만: "3-4만원대", 50000원 이상 100000원 미만: "5만원이상", 100000원 이상: "10만원이상")
     
 [지시 사항]
-사용자 선호도, 현재 기상 정보, 현재 시간(current_context.current_time_hour), **그리고 지역(current_context.region)과 날짜/요일(current_context.current_date, current_context.day_of_week)**을 종합적으로 고려하여, 최소 3개 이상, 최대 10개의 다양한 추천 조합을 생성해주세요.
+사용자 선호도, 현재 기상 정보(온도, 강수, 습도, 하늘상태), 현재 시간(current_context.current_time_hour), **그리고 지역(current_context.region)과 날짜/요일(current_context.current_date, current_context.day_of_week)**을 종합적으로 고려하여, 최소 3개 이상, 최대 10개의 다양한 추천 조합을 생성해주세요.
 각 추천 조합(recommended_tags)은 각 태그 유형별로 1~3개 정도의 가장 적합한 태그를 선택하여 JSON 배열 형태로 값을 포함해주세요.
 각 추천은 서로 다른 매력이나 상황(예: '가볍게 즐길 수 있는', '든든하게 채울 수 있는', '색다른 경험을 줄 수 있는' 등)에 초점을 맞춰, 주요 태그 조합이 의미 있게 중복되지 않도록 해주세요.
 특히 current_context.current_time_hour와 current_context.day_of_week를 바탕으로 식사유형_상황 태그를 유연하고 맥락적으로 선택해주세요. 단순한 시간 구간만을 고려하기보다, 사용자의 나이대, 선호도, 기상 조건, 요일별 사회적 분위기 등 다른 모든 정보와 시너지를 내어 최적의 식사 시간대와 상황을 판단해야 합니다.
@@ -182,9 +191,10 @@ recommendation_reason은 단순한 사실 나열을 넘어, 사용자의 현재 
         food_category_preference: userFoodCategoryPreference,
       },
       weather_conditions: {
-        temperature_celsius: temperatureCelsius,
-        precipitation: precipitationStatus,
-        humidity_percentage: humidityPercentage,
+        온도: temperatureCelsius,
+        강수: precipitationStatus,
+        습도: humidityPercentage,
+        하늘상태: skyStatus,
       },
       current_context: {
         current_time_hour: mealTime + ' ' + currentHour + '시',
