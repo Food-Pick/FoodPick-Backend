@@ -69,6 +69,7 @@ export class RestaurantService {
         'restaurant.사업장명',
         'restaurant.도로명전체주소',
         'restaurant.menu',
+        'restaurant.photo',
         'restaurant.latitude',
         'restaurant.longitude',
         'restaurant.geom',
@@ -121,7 +122,7 @@ export class RestaurantService {
   async findNearby(lat: number, lng: number, distance = 3000) {
     const degreeRadius = distance / 111000;
 
-    return this.restaurantRepository
+    const restaurants = await this.restaurantRepository
       .createQueryBuilder('restaurant')
       .select([
         'restaurant.id',
@@ -155,6 +156,8 @@ export class RestaurantService {
       .limit(100)
       .cache(true)
       .getRawAndEntities();
+
+    return restaurants;
   }
 
   async getRandomPick(lat: number, lng: number, distance = 3000) {
@@ -275,7 +278,6 @@ export class RestaurantService {
       .cache(true)
       .getRawAndEntities();
 
-    console.log('result', result);
     return result;
   }
 }
