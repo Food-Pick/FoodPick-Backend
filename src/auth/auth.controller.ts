@@ -1,4 +1,4 @@
-import { Controller, Post, Body } from '@nestjs/common';
+import { Controller, Get,Post, Body, Param } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -40,5 +40,19 @@ export class AuthController {
     console.log('update-profile 호출');
     console.log(updateProfileDto);
     return this.authService.updateProfile(updateProfileDto);
+  }
+
+  @Post('update-auth-likes')
+  async updateProfileLikes(@Body() body: any) {
+    console.log('update-profile-likes 호출');
+    console.log(body)
+    return this.authService.updateProfileLikes(body)
+  }
+
+  @Get('get-auth-likes/:userId/:userEmail')
+  async getAuthLikes(@Param('userId') userId: string, @Param('userEmail') userEmail: string) {
+    console.log('get-auth-likes 호출');
+    console.log(userId, userEmail)
+    return this.authService.getAuthLikes(userId, userEmail)
   }
 }

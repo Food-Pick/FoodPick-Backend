@@ -13,6 +13,7 @@ export class CreateAuthTable1716360000000 implements MigrationInterface {
                 "age" integer NOT NULL,
                 "price" character varying NOT NULL,
                 "favorite_food" text[] NOT NULL,
+                "likes" jsonb DEFAULT NULL,
                 "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
                 "updatedAt" TIMESTAMP NOT NULL DEFAULT now(),
                 CONSTRAINT "UQ_auth_userId" UNIQUE ("userId"),

@@ -133,4 +133,66 @@ export class AuthService {
     await this.authRepository.save(user);
     return { message: '프로필 업데이트 성공' };
   }
+
+  async updateProfileLikes(body: any) {
+    console.log('UpdateProfileLikes service 시작')
+
+    const user = await this.authRepository.findOne({
+      where: { userId: body.userId, email: body.userEmail },
+    });
+
+    if (!user || user.email !== body.userEmail) {
+      throw new NotFoundException('사용자를 찾을 수 없습니다.');
+    }
+
+    // 좋아요 정보를 JSON 객체로 생성
+    const likeInfo = {
+      restaurantId: body.restaurantId,
+      restaurantName: body.restaurantName,
+      restaurantImage: body.restaurantImage,
+      menuName: body.menuName,
+      menuDescription: body.menuDescription,
+      price: body.menuPrice,
+    };
+    
+    // 기존 likes 배열이 없으면 빈 배열로 초기화
+    if (!user.likes) {
+      user.likes = [];
+    }
+
+    // 이미 좋아요한 메뉴인지 확인 (restaurantId와 menuName으로 비교)
+    const existingLikeIndex = user.likes.findIndex(
+      like => like.restaurantId === likeInfo.restaurantId && 
+              like.menuName === likeInfo.menuName
+    );
+    
+    if (existingLikeIndex === -1) {
+      // 새로운 좋아요 추가
+      user.likes.push(likeInfo);
+    } else {
+      // 이미 좋아요한 메뉴라면 제거 (토글 기능)
+      user.likes.splice(existingLikeIndex, 1);
+    }
+
+    await this.authRepository.save(user);
+
+    return {
+      message: existingLikeIndex === -1 ? '좋아요 추가 완료' : '좋아요 취소 완료',
+      likes: user.likes
+    };
+  }
+
+  async getAuthLikes(userId: string, userEmail: string) {
+    const user = await this.authRepository.findOne({
+      where: { userId: userId, email: userEmail },
+    });
+
+    if (!user || user.email !== userEmail) {
+      throw new NotFoundException('사용자를 찾을 수 없습니다.');
+    }
+
+    console.log(user.likes)
+
+    return user.likes;
+  }
 }

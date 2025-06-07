@@ -35,6 +35,9 @@ export class Auth {
   @Column('text', { array: true })
   favorite_food: string[];
 
+  @Column('jsonb', { default: null })
+  likes: any;
+
   @CreateDateColumn()
   createdAt: Date;
 
