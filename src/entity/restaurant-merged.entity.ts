@@ -79,4 +79,7 @@ export class RestaurantMerged {
 
   @Column({ nullable: true })
   menu_tags: string;
+
+  @Column({ nullable: true })
+  네이버_음식점_카테고리: string;
 }
