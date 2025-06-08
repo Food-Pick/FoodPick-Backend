@@ -26,4 +26,4 @@ RUN chmod +x /usr/src/app/entrypoint.sh
 
 EXPOSE 3000
 
-ENTRYPOINT ["sh", "-c", "npm run start:dev"]
+ENTRYPOINT ["sh", "/usr/src/app/entrypoint.sh"]
