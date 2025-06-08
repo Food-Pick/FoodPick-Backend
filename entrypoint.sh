@@ -18,4 +18,12 @@ npm install
 
 # 최적화된 개발 서버 시작
 export NODE_OPTIONS="--max-old-space-size=2048 --max_semi_space_size=64"
-exec npm run start:dev -- --preserveWatchOutput
+
+if [ "$NODE_ENV" = "production" ]; then
+    echo "Starting in production mode..."
+    npm run build
+    npm run start:prod
+else
+    echo "Starting in development mode..."
+    npm run start:dev
+fi
