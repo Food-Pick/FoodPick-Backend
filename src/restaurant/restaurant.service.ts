@@ -140,6 +140,7 @@ export class RestaurantService {
       .select([
         'restaurant.id',
         'restaurant.사업장명',
+        'restaurant.네이버_음식점_카테고리',
         'restaurant.menu',
         'restaurant.menu_tags',
         'restaurant.photo',
