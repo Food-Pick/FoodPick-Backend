@@ -25,7 +25,7 @@ import { ConfigModule } from '@nestjs/config';
       entities: [RestaurantMerged, Auth],
       synchronize: false, // 마이그레이션을 사용하기 위해 false로 설정 이거 true 시 DB날려버릴수 있어요.
       migrations: ['dist/migrations/*.js'],
-      migrationsRun: true,
+      migrationsRun: false,
     }),
     TypeOrmModule.forFeature([RestaurantMerged, Auth]),
     RestaurantModule,
